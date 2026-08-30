@@ -1,16 +1,16 @@
-# 清掃・管理チェックリスト
-
-写真の「実施予定」表を、スマホから見られるStreamlitアプリにしたものです。
+# 清掃・在庫チェック
+清掃チェックリストと在庫管理をスマホ向けにまとめたStreamlitアプリです。
 
 ## 起動
+`pip install -r requirements.txt`
+`streamlit run app.py`
 
-```bash
-pip install -r requirements.txt
-streamlit run app.py
-```
-
-起動するとブラウザでチェックリストを操作できます。
-
-## ネット上で公開する場合
-
-GitHubに `app.py` と `requirements.txt` をアップロードし、Streamlit Community Cloudからデプロイできます。
+## 主な機能
+- 今日の清掃予定を自動表示
+- チェックボックスと進捗表示
+- 週間予定
+- 商品ごとの仕入数・出庫数入力
+- 理論在庫数を自動計算
+- 発注チェック
+- 在庫0・発注対象を上部表示
+- 商品追加

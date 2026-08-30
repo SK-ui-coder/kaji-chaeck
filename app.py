@@ -1,91 +1,131 @@
 import streamlit as st
 from datetime import datetime
 
-st.set_page_config(
-    page_title="清掃・管理チェックリスト",
-    page_icon="🧹",
-    layout="wide",
-)
+st.set_page_config(page_title="清掃・在庫チェック", page_icon="🧹", layout="centered")
 
-# 写真の「実施予定」をそのままデータ化
+DAYS = ["月曜日","火曜日","水曜日","木曜日","金曜日","土曜日","日曜日"]
+
 SCHEDULE = {
-    "洗濯":       ["月曜日", "水曜日", "金曜日"],
-    "トイレ・洗面": ["火曜日", "木曜日", "土曜日"],
-    "床":         ["月曜日", "火曜日", "水曜日", "木曜日", "金曜日", "土曜日", "日曜日"],
-    "玄関":       ["土曜日"],
-    "壁・窓":     ["月曜日", "金曜日"],
-    "排水溝":     ["火曜日", "水曜日"],
-    "加湿器":     ["木曜日", "日曜日"],
-    "皿・台所":   ["月曜日", "火曜日", "水曜日", "木曜日", "金曜日", "土曜日", "日曜日"],
-    "在庫管理":   ["金曜日", "土曜日", "日曜日"],
-    "価格調査":   ["月曜日", "火曜日", "水曜日", "木曜日", "金曜日", "土曜日", "日曜日"],
+    "洗濯":["月曜日","水曜日","金曜日"],
+    "トイレ・洗面":["火曜日","木曜日","土曜日"],
+    "床":DAYS,
+    "玄関":["土曜日"],
+    "壁・窓":["月曜日","金曜日"],
+    "排水溝":["火曜日","水曜日"],
+    "加湿器":["木曜日","日曜日"],
+    "皿・台所":DAYS,
+    "在庫管理":["金曜日","土曜日","日曜日"],
+    "価格調査":DAYS,
 }
 
-DAYS = ["月曜日", "火曜日", "水曜日", "木曜日", "金曜日", "土曜日", "日曜日"]
+INITIAL_INVENTORY = [
+    {"商品名":"風呂用洗剤","仕入数":1,"出庫数":0,"容量":500,"発注":False},
+    {"商品名":"トイレ洗剤","仕入数":1,"出庫数":0,"容量":500,"発注":False},
+    {"商品名":"トイレ芳香剤","仕入数":1,"出庫数":0,"容量":500,"発注":False},
+    {"商品名":"洗濯洗剤","仕入数":1,"出庫数":0,"容量":500,"発注":False},
+    {"商品名":"洗濯柔軟剤","仕入数":1,"出庫数":0,"容量":500,"発注":False},
+    {"商品名":"トイレ漂白剤","仕入数":1,"出庫数":0,"容量":500,"発注":False},
+    {"商品名":"漂白剤","仕入数":1,"出庫数":0,"容量":500,"発注":False},
+    {"商品名":"住宅洗剤","仕入数":1,"出庫数":0,"容量":500,"発注":False},
+    {"商品名":"床シート1","仕入数":1,"出庫数":0,"容量":100,"発注":True},
+    {"商品名":"床シート2","仕入数":1,"出庫数":0,"容量":100,"発注":True},
+    {"商品名":"ロール","仕入数":1,"出庫数":0,"容量":100,"発注":True},
+]
 
-# セッション中はチェック状態を保持
+if "inventory" not in st.session_state:
+    st.session_state.inventory = [x.copy() for x in INITIAL_INVENTORY]
 if "checked" not in st.session_state:
     st.session_state.checked = {}
 
-today = datetime.now()
-today_name = DAYS[today.weekday()]
+now = datetime.now()
+today = DAYS[now.weekday()]
+st.title("🧹 清掃・在庫チェック")
+st.caption(f"{now:%Y年%m月%d日}（{today}）")
 
-st.title("🧹 清掃・管理チェックリスト")
-st.caption(f"今日は {today.strftime('%Y年%m月%d日')}（{today_name}）")
+tab1, tab2 = st.tabs(["🧹 清掃チェック","📦 在庫管理"])
 
-# 今日の予定
-today_tasks = [task for task, days in SCHEDULE.items() if today_name in days]
-
-st.subheader(f"📋 今日の実施予定（{len(today_tasks)}項目）")
-
-if today_tasks:
-    for task in today_tasks:
-        key = f"{today.date()}_{task}"
+with tab1:
+    tasks = [x for x,d in SCHEDULE.items() if today in d]
+    st.subheader(f"今日の実施予定　{len(tasks)}項目")
+    done = 0
+    for task in tasks:
+        key = f"{now.date()}_{task}"
         st.session_state.checked.setdefault(key, False)
-        st.checkbox(task, key=key)
+        if st.checkbox(task, key=key):
+            done += 1
+    st.progress(done/len(tasks) if tasks else 0)
+    st.write(f"**進捗：{done} / {len(tasks)} 完了**")
+    if tasks and done == len(tasks):
+        st.success("🎉 今日の予定はすべて完了！")
+    if st.button("🔄 今日のチェックをリセット", use_container_width=True):
+        for task in tasks:
+            st.session_state.checked[f"{now.date()}_{task}"] = False
+        st.rerun()
 
-    done = sum(st.session_state.checked[f"{today.date()}_{task}"] for task in today_tasks)
-    total = len(today_tasks)
-    st.progress(done / total if total else 0)
-    st.write(f"**進捗：{done} / {total} 完了**")
+    st.divider()
+    st.subheader("📅 週間予定")
+    st.caption("月　火　水　木　金　土　日")
+    for task, days in SCHEDULE.items():
+        marks = " ".join("⭕" if d in days else "・" for d in DAYS)
+        st.write(f"**{task}**　{marks}")
 
-    if done == total:
-        st.success("🎉 今日の予定はすべて完了です！")
-else:
-    st.info("今日は実施予定がありません。")
+with tab2:
+    st.subheader("📦 在庫管理")
+    low = []
+    orders = []
+    total = 0
+    for x in st.session_state.inventory:
+        stock = max(0, x["仕入数"] - x["出庫数"])
+        total += stock
+        if stock == 0: low.append(x["商品名"])
+        if x["発注"]: orders.append(x["商品名"])
 
-if st.button("今日のチェックをリセット"):
-    for task in today_tasks:
-        st.session_state.checked[f"{today.date()}_{task}"] = False
-    st.rerun()
+    a,b,c = st.columns(3)
+    a.metric("商品数", len(st.session_state.inventory))
+    b.metric("在庫合計", total)
+    c.metric("発注", len(orders))
+
+    if orders:
+        st.warning("🛒 発注対象：" + "、".join(orders))
+    if low:
+        st.error("⚠️ 在庫0：" + "、".join(low))
+    st.caption("理論在庫数 ＝ 仕入数 − 出庫数")
+
+    for i,x in enumerate(st.session_state.inventory):
+        stock = max(0, x["仕入数"] - x["出庫数"])
+        with st.container(border=True):
+            title = f"### 📦 {x['商品名']}"
+            if x["発注"]: title += "　🛒 発注"
+            if stock == 0: title += "　⚠️ 在庫0"
+            st.markdown(title)
+
+            p,q = st.columns(2)
+            x["仕入数"] = p.number_input("仕入数", min_value=0, step=1, value=int(x["仕入数"]), key=f"p{i}")
+            x["出庫数"] = q.number_input("出庫数", min_value=0, step=1, value=int(x["出庫数"]), key=f"q{i}")
+
+            r,s = st.columns(2)
+            r.metric("理論在庫数", max(0, x["仕入数"]-x["出庫数"]))
+            s.metric("容量", f"{x['容量']}")
+
+            x["発注"] = st.checkbox("🛒 発注する", value=bool(x["発注"]), key=f"o{i}")
+
+    st.divider()
+    st.subheader("➕ 商品を追加")
+    with st.form("add"):
+        name = st.text_input("商品名")
+        a,b = st.columns(2)
+        cap = a.number_input("容量", min_value=0, step=1, value=500)
+        qty = b.number_input("初期仕入数", min_value=0, step=1, value=0)
+        if st.form_submit_button("商品を追加", use_container_width=True):
+            if name.strip():
+                st.session_state.inventory.append({"商品名":name.strip(),"仕入数":int(qty),"出庫数":0,"容量":int(cap),"発注":False})
+                st.rerun()
+            else:
+                st.error("商品名を入力してください。")
+
+    if st.button("🔄 在庫を初期状態に戻す", use_container_width=True):
+        st.session_state.inventory = [x.copy() for x in INITIAL_INVENTORY]
+        st.rerun()
 
 st.divider()
-
-# 週間予定表
-st.subheader("📅 週間実施予定")
-
-header = st.columns([1.5] + [1] * 7)
-header[0].markdown("**種類**")
-for col, day in zip(header[1:], DAYS):
-    col.markdown(f"**{day[:1]}**")
-
-for task, scheduled_days in SCHEDULE.items():
-    cols = st.columns([1.5] + [1] * 7)
-    cols[0].write(task)
-    for i, day in enumerate(DAYS):
-        if day in scheduled_days:
-            cols[i + 1].markdown("⭕")
-        else:
-            cols[i + 1].markdown("—")
-
-st.divider()
-
-# 今日以外も確認できる詳細
-st.subheader("🔎 曜日別の予定")
-selected_day = st.selectbox("確認する曜日", DAYS, index=today.weekday())
-selected_tasks = [task for task, days in SCHEDULE.items() if selected_day in days]
-
-for task in selected_tasks:
-    st.write(f"☑️ {task}")
-
-st.caption("※ チェック状態は、このブラウザで開いているセッション中に保持されます。")
+st.caption("※現在はブラウザのセッション中に入力内容を保持します。")
