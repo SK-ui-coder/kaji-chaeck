@@ -8,8 +8,8 @@ from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, 
 from reportlab.lib import colors
 from reportlab.lib.styles import getSampleStyleSheet
 from reportlab.lib.enums import TA_CENTER
-from pathlib import Path          # ←★★★ 追加 ★★★
-import tempfile                   # ←★★★ PDF保存用 ★★★
+from pathlib import Path
+import tempfile
 
 st.set_page_config(page_title="清掃・在庫管理", page_icon="🧹", layout="wide")
 
