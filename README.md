@@ -1,13 +1,17 @@
-# 清掃・在庫管理（PDF発注記録対応）
+# 清掃・在庫管理 v4
 
-## 改良点
-- チェックリストのリセットを完全に再生成する方式に変更
-- 在庫表のリセットも同様に修正
-- CSV風の見やすい一覧表
-- 「発注」にチェックした商品から発注リストを自動作成
-- 発注リストをPDFにして保存できる
-- 発注日時・商品を発注記録として画面に残す
+Streamlit Cloudで発生していた `st.dataframe()` の TypeError を修正した版です。
 
-## 起動
-pip install -r requirements.txt
-streamlit run app.py
+主な機能:
+- 清掃チェックリスト
+- チェックリストの確実なリセット
+- CSV風の在庫一覧表
+- 仕入数・出庫数・容量・発注を表から直接編集
+- 理論在庫数の自動計算
+- 発注対象から発注リストを作成
+- 発注リストPDF作成・印刷
+- 発注記録
+
+## Streamlit Cloud
+GitHubの `app.py` と `requirements.txt` をこの版に置き換えてください。
+`requirements.txt` に `reportlab` を入れているのでPDF機能も動作します。

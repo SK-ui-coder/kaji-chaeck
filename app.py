@@ -229,16 +229,17 @@ with tab2:
         st.error("⚠️ 在庫0：" + "、".join(zero_df["商品名"].tolist()))
 
     st.markdown("### 📋 商品一覧")
-    st.dataframe(
+    edited_inv = st.data_editor(
         df,
         hide_index=True,
         use_container_width=True,
+        num_rows="dynamic",
         column_config={
-            "商品名": st.column_config.TextColumn("商品名", width="large"),
-            "仕入数": st.column_config.NumberColumn("仕入数", width="small"),
-            "出庫数": st.column_config.NumberColumn("出庫数", width="small"),
+            "商品名": st.column_config.TextColumn("商品名", width="large", required=True),
+            "仕入数": st.column_config.NumberColumn("仕入数", min_value=0, step=1, width="small"),
+            "出庫数": st.column_config.NumberColumn("出庫数", min_value=0, step=1, width="small"),
             "理論在庫数": st.column_config.NumberColumn("理論在庫数", width="small", disabled=True),
-            "容量": st.column_config.NumberColumn("容量", width="small"),
+            "容量": st.column_config.NumberColumn("容量", min_value=0, step=1, width="small"),
             "発注": st.column_config.CheckboxColumn("🛒 発注", width="small"),
         },
         disabled=["理論在庫数"],
@@ -246,13 +247,11 @@ with tab2:
     )
 
     # 編集値を保存。理論在庫は再計算
-    edited_inv = st.session_state.get(f"inventory_editor_{st.session_state.inventory_reset_no}")
-    if isinstance(edited_inv, pd.DataFrame):
-        base = edited_inv[["商品名","仕入数","出庫数","容量","発注"]].copy()
-        for col in ["仕入数","出庫数","容量"]:
-            base[col] = pd.to_numeric(base[col], errors="coerce").fillna(0).astype(int)
-        base["発注"] = base["発注"].fillna(False).astype(bool)
-        st.session_state.inventory = base.reset_index(drop=True)
+    base = edited_inv[["商品名","仕入数","出庫数","容量","発注"]].copy()
+    for col in ["仕入数","出庫数","容量"]:
+        base[col] = pd.to_numeric(base[col], errors="coerce").fillna(0).astype(int)
+    base["発注"] = base["発注"].fillna(False).astype(bool)
+    st.session_state.inventory = base.reset_index(drop=True)
 
     st.divider()
     st.subheader("🛒 発注リスト")
