@@ -107,6 +107,10 @@ if "out_history" not in st.session_state:
 if "order_history" not in st.session_state:
     st.session_state.order_history = []
 
+# ★★★ これが無いとクラッシュする ★★★
+if "inventory_reset_no" not in st.session_state:
+    st.session_state.inventory_reset_no = 0
+
 # -----------------------------
 # 在庫ビュー
 # -----------------------------
