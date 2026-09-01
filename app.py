@@ -1,6 +1,6 @@
 import streamlit as st
 import pandas as pd
-from datetime import datetime
+from datetime import datetime, timedelta
 from reportlab.lib.pagesizes import A4
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
@@ -8,7 +8,6 @@ from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, 
 from reportlab.lib import colors
 from reportlab.lib.styles import getSampleStyleSheet
 from reportlab.lib.enums import TA_CENTER
-from pathlib import Path
 import tempfile
 import os
 
@@ -17,15 +16,19 @@ st.set_page_config(page_title="清掃・在庫管理", page_icon="🧹", layout=
 # -----------------------------
 # 日本語フォント（文字化け防止）
 # -----------------------------
-FONT_DIR = "fonts"
-FONT_FILE = "NotoSansCJK-Regular.otf"
-FONT_PATH = os.path.join(FONT_DIR, FONT_FILE)
+FONT_PATH = "fonts/NotoSansCJK-Regular.otf"
 
-if os.path.exists(FONT_PATH):
+try:
     pdfmetrics.registerFont(TTFont("Japanese", FONT_PATH))
     PDF_FONT = "Japanese"
-else:
-    PDF_FONT = "Helvetica"
+except:
+    PDF_FONT = "Helvetica"  # フォントが無い場合でも落ちない
+
+# -----------------------------
+# 日本時間（UTC → JST）
+# -----------------------------
+def jp_now():
+    return datetime.utcnow() + timedelta(hours=9)
 
 # -----------------------------
 # 掃除詳細チェック項目
@@ -68,7 +71,7 @@ ORDER_UNIT = {
 }
 
 # -----------------------------
-# 初期在庫（発注は全部 False）
+# 初期在庫
 # -----------------------------
 INITIAL_INVENTORY = [
     ["風呂用洗剤",1,0,500,False],
@@ -107,7 +110,6 @@ if "out_history" not in st.session_state:
 if "order_history" not in st.session_state:
     st.session_state.order_history = []
 
-# ★★★ これが無いとクラッシュする ★★★
 if "inventory_reset_no" not in st.session_state:
     st.session_state.inventory_reset_no = 0
 
@@ -121,16 +123,9 @@ def inventory_view():
     df["理論在庫数"] = (df["仕入数"] - df["出庫数"]).clip(lower=0)
     return df[["商品名","仕入数","出庫数","理論在庫数","容量","発注"]]
 
-# 日本語フォント（文字化け防止）
-FONT_PATH = "fonts/NotoSansCJK-Regular.otf"
-pdfmetrics.registerFont(TTFont("Japanese", FONT_PATH))
-PDF_FONT = "Japanese"
-
-from datetime import datetime, timedelta
-
-def jp_now():
-    return datetime.utcnow() + timedelta(hours=9)
-
+# -----------------------------
+# PDF作成（完全版）
+# -----------------------------
 def make_order_pdf(order_df, filename):
     tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".pdf")
     path = tmp.name
@@ -155,6 +150,30 @@ def make_order_pdf(order_df, filename):
         Spacer(1, 12),
     ]
 
+    data = [["商品名","現在庫","容量","発注単位"]]
+    for _, r in order_df.iterrows():
+        unit = ORDER_UNIT.get(r["商品名"], 1)
+        data.append([
+            str(r["商品名"]),
+            str(int(r["理論在庫数"])),
+            str(int(r["容量"])),
+            str(unit),
+        ])
+
+    table = Table(data, colWidths=[230,80,80,80], repeatRows=1)
+    table.setStyle(TableStyle([
+        ("FONTNAME",(0,0),(-1,-1),PDF_FONT),
+        ("FONTSIZE",(0,0),(-1,-1),10),
+        ("BACKGROUND",(0,0),(-1,0),colors.lightgrey),
+        ("GRID",(0,0),(-1,-1),0.5,colors.grey),
+    ]))
+
+    story.append(table)
+    story.append(Spacer(1, 15))
+    story.append(Paragraph(f"合計 {len(order_df)} 商品", normal))
+
+    doc.build(story)
+    return path
 
 # -----------------------------
 # チェックリスト画面
@@ -175,7 +194,6 @@ SCHEDULE = {
     "価格調査": FULL_DAYS,
 }
 
-# セッション初期化（チェック系）
 if "clean_status" not in st.session_state:
     st.session_state.clean_status = {task: False for task in SCHEDULE}
 
@@ -186,12 +204,8 @@ if "clean_details" not in st.session_state:
     }
 
 if "selected_day" not in st.session_state:
-    now = datetime.now()
-    st.session_state.selected_day = FULL_DAYS[now.weekday()]
+    st.session_state.selected_day = FULL_DAYS[jp_now().weekday()]
 
-# -----------------------------
-# UI：チェックリストタブ
-# -----------------------------
 st.title("🧹 清掃・在庫管理")
 
 tab1, tab2, tab3 = st.tabs(["🧹 チェックリスト", "📦 在庫・発注", "📤 出庫履歴"])
@@ -199,7 +213,6 @@ tab1, tab2, tab3 = st.tabs(["🧹 チェックリスト", "📦 在庫・発注"
 with tab1:
     st.subheader("曜日別チェックリスト")
 
-    # 曜日選択ボタン
     cols = st.columns(7)
     for i, d in enumerate(FULL_DAYS):
         if cols[i].button(DAYS[i], use_container_width=True):
@@ -208,10 +221,8 @@ with tab1:
     target_day = st.session_state.selected_day
     st.caption(f"表示中の曜日：{target_day}")
 
-    # 今日のタスク抽出
     today_tasks = [task for task, days in SCHEDULE.items() if target_day in days]
 
-    # リセットボタン
     if st.button("🔄 この曜日のチェックを全部リセット", use_container_width=True):
         for task in today_tasks:
             st.session_state.clean_status[task] = False
@@ -219,7 +230,6 @@ with tab1:
                 st.session_state.clean_details[task][det] = False
         st.rerun()
 
-    # メインチェック
     df = pd.DataFrame({
         "項目": today_tasks,
         "完了": [st.session_state.clean_status[t] for t in today_tasks]
@@ -236,80 +246,36 @@ with tab1:
         }
     )
 
-    # 状態反映
     for _, row in edited.iterrows():
         st.session_state.clean_status[row["項目"]] = bool(row["完了"])
 
-    # 進捗表示
     done = int(edited["完了"].sum())
     total = len(edited)
 
-    a,b,c = st.columns(3)
-    a.metric("予定", total)
-    b.metric("完了", done)
-    c.metric("残り", total - done)
-
     st.progress(done/total if total else 0)
 
-    # 詳細チェック
     st.divider()
     st.subheader("🧩 詳細チェック")
 
     for task in today_tasks:
         with st.expander(f"{task} の詳細チェック"):
             details = DETAILS.get(task, [])
-            if not details:
-                st.caption("詳細項目なし")
-            else:
-                cols = st.columns(len(details))
-                for i, det in enumerate(details):
-                    key = f"{task}_{det}"
-                    current = st.session_state.clean_details[task][det]
-                    new_val = cols[i].checkbox(det, value=current, key=key)
-                    st.session_state.clean_details[task][det] = new_val
+            cols = st.columns(len(details))
+            for i, det in enumerate(details):
+                key = f"{task}_{det}"
+                current = st.session_state.clean_details[task][det]
+                new_val = cols[i].checkbox(det, value=current, key=key)
+                st.session_state.clean_details[task][det] = new_val
 
-    # 週間予定表
-    st.divider()
-    st.subheader("📅 週間予定表")
-
-    rows = []
-    for task, days in SCHEDULE.items():
-        rows.append({
-            "項目": task,
-            "月": "⭕" if "月曜日" in days else "—",
-            "火": "⭕" if "火曜日" in days else "—",
-            "水": "⭕" if "水曜日" in days else "—",
-            "木": "⭕" if "木曜日" in days else "—",
-            "金": "⭕" if "金曜日" in days else "—",
-            "土": "⭕" if "土曜日" in days else "—",
-            "日": "⭕" if "日曜日" in days else "—",
-        })
-
-    st.dataframe(pd.DataFrame(rows), hide_index=True, use_container_width=True)
-
-# =========================================================
-# 📦 在庫・発注
-# =========================================================
+# -----------------------------
+# 在庫・発注
+# -----------------------------
 with tab2:
     st.subheader("📦 在庫管理表")
 
-    prev_df = st.session_state.inventory.copy()  # 出庫差分検出用
+    prev_df = st.session_state.inventory.copy()
 
     df = inventory_view()
-    order_df = df[df["発注"]].copy()
-    zero_df = df[df["理論在庫数"] <= 0]
-
-    a,b,c = st.columns(3)
-    a.metric("商品数", len(df))
-    b.metric("在庫合計", int(df["理論在庫数"].sum()))
-    c.metric("発注商品", len(order_df))
-
-    if len(order_df):
-        st.warning("🛒 発注対象：" + "、".join(order_df["商品名"].tolist()))
-    if len(zero_df):
-        st.error("⚠️ 在庫0：" + "、".join(zero_df["商品名"].tolist()))
-
-    st.markdown("### 📋 商品一覧（編集できます）")
 
     edited_inv = st.data_editor(
         df,
@@ -317,33 +283,39 @@ with tab2:
         use_container_width=True,
         num_rows="dynamic",
         column_config={
-            "商品名": st.column_config.TextColumn("商品名", width="large", required=True),
-            "仕入数": st.column_config.NumberColumn("仕入数", min_value=0, step=1),
-            "出庫数": st.column_config.NumberColumn("出庫数", min_value=0, step=1),
+            "商品名": st.column_config.TextColumn("商品名", width="large"),
+            "仕入数": st.column_config.NumberColumn("仕入数", min_value=0),
+            "出庫数": st.column_config.NumberColumn("出庫数", min_value=0),
             "理論在庫数": st.column_config.NumberColumn("理論在庫数", disabled=True),
-            "容量": st.column_config.NumberColumn("容量", min_value=0, step=1),
+            "容量": st.column_config.NumberColumn("容量", min_value=0),
             "発注": st.column_config.CheckboxColumn("🛒 発注"),
         },
         disabled=["理論在庫数"],
         key=f"inventory_editor_{st.session_state.inventory_reset_no}"
     )
 
-    # 編集内容を反映
     base = edited_inv[["商品名","仕入数","出庫数","容量","発注"]].copy()
     for col in ["仕入数","出庫数","容量"]:
         base[col] = pd.to_numeric(base[col], errors="coerce").fillna(0).astype(int)
     base["発注"] = base["発注"].fillna(False).astype(bool)
 
     # -----------------------------
-    # 📤 出庫履歴の記録（差分検出）
+    # 出庫履歴（安全版）
     # -----------------------------
     for i, row in base.iterrows():
-        old_out = int(prev_df.loc[i, "出庫数"])
+        prev_match = prev_df[prev_df["商品名"] == row["商品名"]]
+
+        if len(prev_match) == 0:
+            old_out = 0
+        else:
+            old_out = int(prev_match["出庫数"].iloc[0])
+
         new_out = int(row["出庫数"])
+
         if new_out > old_out:
             diff = new_out - old_out
             st.session_state.out_history.append({
-                "日時": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                "日時": jp_now().strftime("%Y-%m-%d %H:%M:%S"),
                 "商品名": row["商品名"],
                 "出庫数": diff,
                 "残在庫": row["仕入数"] - new_out
@@ -351,9 +323,6 @@ with tab2:
 
     st.session_state.inventory = base.reset_index(drop=True)
 
-    # -----------------------------
-    # 🛒 発注リスト
-    # -----------------------------
     st.divider()
     st.subheader("🛒 発注リスト")
 
@@ -367,12 +336,12 @@ with tab2:
         ])
         st.dataframe(order_display, hide_index=True, use_container_width=True)
 
-        if st.button("🖨️ 発注リストをPDF記録", use_container_width=True):
-            filename = f"発注リスト_{datetime.now():%Y%m%d_%H%M%S}.pdf"
+        if st.button("🖨️ PDFを作成", use_container_width=True):
+            filename = f"発注リスト_{jp_now():%Y%m%d_%H%M%S}.pdf"
             pdf_path = make_order_pdf(current_orders, filename)
 
             st.session_state.order_history.append({
-                "日時": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                "日時": jp_now().strftime("%Y-%m-%d %H:%M:%S"),
                 "商品数": len(current_orders),
                 "商品": "、".join(current_orders["商品名"].tolist()),
                 "ファイル": filename
@@ -386,74 +355,23 @@ with tab2:
                     mime="application/pdf",
                     use_container_width=True
                 )
-            st.success("PDFの発注記録を作成しました。")
-    else:
-        st.info("発注にチェックした商品はありません。")
+            st.success("PDFを作成しました。")
 
-    # -----------------------------
-    # 🗂️ 発注履歴
-    # -----------------------------
-    st.markdown("### 🗂️ 発注記録")
-    if st.session_state.order_history:
-        st.dataframe(
-            pd.DataFrame(st.session_state.order_history),
-            hide_index=True,
-            use_container_width=True
-        )
-    else:
-        st.caption("まだ発注記録はありません。")
-
-    # -----------------------------
-    # ➕ 商品追加
-    # -----------------------------
     st.divider()
-    st.subheader("➕ 商品追加")
+    st.subheader("🗂️ 発注履歴")
 
-    with st.form("add_product"):
-        name = st.text_input("商品名")
-        a,b = st.columns(2)
-        cap = a.number_input("容量", min_value=0, step=1, value=500)
-        qty = b.number_input("初期仕入数", min_value=0, step=1, value=0)
-        if st.form_submit_button("商品を追加", use_container_width=True):
-            if name.strip():
-                new = pd.DataFrame([[name.strip(),int(qty),0,int(cap),False]],
-                                   columns=["商品名","仕入数","出庫数","容量","発注"])
-                st.session_state.inventory = pd.concat(
-                    [st.session_state.inventory, new], ignore_index=True
-                )
-                st.session_state.inventory_reset_no += 1
-                st.rerun()
-            else:
-                st.error("商品名を入力してください。")
-
-    if st.button("🔄 在庫表を初期状態に戻す", use_container_width=True):
-        st.session_state.inventory = pd.DataFrame(
-            INITIAL_INVENTORY,
-            columns=["商品名","仕入数","出庫数","容量","発注"]
-        )
-        st.session_state.inventory_reset_no += 1
-        st.rerun()
-
-# 📤 出庫履歴の記録（差分検出：安全版）
-for i, row in base.iterrows():
-
-    # 商品名で一致させる（行番号は使わない）
-    prev_match = prev_df[prev_df["商品名"] == row["商品名"]]
-
-    if len(prev_match) == 0:
-        old_out = 0
+    if st.session_state.order_history:
+        st.dataframe(pd.DataFrame(st.session_state.order_history), hide_index=True)
     else:
-        old_out = int(prev_match["出庫数"].iloc[0])
+        st.caption("まだ発注履歴はありません。")
 
-    new_out = int(row["出庫数"])
+# -----------------------------
+# 出庫履歴
+# -----------------------------
+with tab3:
+    st.subheader("📤 出庫履歴")
 
-    if new_out > old_out:
-        diff = new_out - old_out
-        st.session_state.out_history.append({
-            "日時": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-            "商品名": row["商品名"],
-            "出庫数": diff,
-            "残在庫": row["仕入数"] - new_out
-        })
-
-
+    if st.session_state.out_history:
+        st.dataframe(pd.DataFrame(st.session_state.out_history), hide_index=True)
+    else:
+        st.caption("まだ出庫履歴はありません。")
