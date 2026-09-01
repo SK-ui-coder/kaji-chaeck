@@ -29,6 +29,40 @@ SCHEDULE = {
     "価格調査": FULL_DAYS,
 }
 
+DETAILS = {
+    "洗濯": ["洗濯機掃除", "フィルター清掃", "洗剤補充"],
+    "トイレ・洗面": ["便器", "洗面台", "鏡", "排水溝"],
+    "床": ["掃除機", "床拭き", "モップ洗浄"],
+    "玄関": ["たたき掃除", "靴整理"],
+    "壁・窓": ["窓拭き", "壁拭き"],
+    "排水溝": ["排水溝ブラシ", "漂白剤投入"],
+    "加湿器": ["フィルター掃除", "水交換"],
+    "皿・台所": ["皿洗い", "台拭き", "排水溝掃除"],
+    "在庫管理": ["棚整理", "在庫確認"],
+    "価格調査": ["ネット価格調査", "店舗価格調査"],
+}
+
+ORDER_UNIT = {
+    "床シート1": 10,
+    "床シート2": 10,
+    "ロール": 3,
+    "洗濯洗剤": 1,
+    "洗濯柔軟剤": 1,
+    "風呂用洗剤": 1,
+    "トイレ洗剤": 1,
+    "トイレ芳香剤": 1,
+    "漂白剤": 1,
+    "住宅洗剤": 1,
+    "フローリングウェットシート": 10,
+    "流せるトイレクリーナー": 1,
+    "消臭ビーズ無香料詰替え": 1,
+    "ソフトパックティッシュ": 1,
+    "食器用泡スプレー": 1,
+    "バスタブタレンジング HARD": 1,
+    "2倍巻トイレットペーパー": 1,
+    "黒リング綿棒2個組": 1,
+}
+
 INITIAL_INVENTORY = [
     ["風呂用洗剤",1,0,500,False],
     ["トイレ洗剤",1,0,500,False],
@@ -38,9 +72,17 @@ INITIAL_INVENTORY = [
     ["トイレ漂白剤",1,0,500,False],
     ["漂白剤",1,0,500,False],
     ["住宅洗剤",1,0,500,False],
-    ["床シート1",1,0,100,True],
-    ["床シート2",1,0,100,True],
-    ["ロール",1,0,100,True],
+    ["床シート1",1,0,100,False],
+    ["床シート2",1,0,100,False],
+    ["ロール",1,0,100,False],
+    ["フローリングウェットシート",3,0,59,False],
+    ["流せるトイレクリーナー",1,0,198,False],
+    ["消臭ビーズ無香料詰替え",1,0,298,False],
+    ["ソフトパックティッシュ",1,0,598,False],
+    ["食器用泡スプレー",1,0,398,False],
+    ["バスタブタレンジング HARD",2,0,498,False],
+    ["2倍巻トイレットペーパー",1,0,678,False],
+    ["黒リング綿棒2個組",1,0,298,False],
 ]
 
 # ---------------- 初期化 ----------------
@@ -52,6 +94,12 @@ if "inventory" not in st.session_state:
 
 if "clean_status" not in st.session_state:
     st.session_state.clean_status = {task: False for task in SCHEDULE}
+
+if "clean_details" not in st.session_state:
+    st.session_state.clean_details = {
+        task: {d: False for d in DETAILS.get(task, [])}
+        for task in SCHEDULE
+    }
 
 if "clean_reset_no" not in st.session_state:
     st.session_state.clean_reset_no = 0
@@ -69,7 +117,6 @@ def inventory_view():
     df["理論在庫数"] = (df["仕入数"] - df["出庫数"]).clip(lower=0)
     return df[["商品名","仕入数","出庫数","理論在庫数","容量","発注"]]
 
-# ---------------- PDF作成（修正版） ----------------
 def make_order_pdf(order_df, filename):
     font_candidates = [
         "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
@@ -107,13 +154,14 @@ def make_order_pdf(order_df, filename):
         Spacer(1, 12),
     ]
 
-    data = [["商品名","現在庫","容量","発注数"]]
+    data = [["商品名","現在庫","容量","発注単位"]]
     for _, r in order_df.iterrows():
+        unit = ORDER_UNIT.get(r["商品名"], 1)
         data.append([
             str(r["商品名"]),
             str(int(r["理論在庫数"])),
             str(int(r["容量"])),
-            "1"
+            str(unit),
         ])
 
     table = Table(data, colWidths=[230,80,80,80], repeatRows=1)
@@ -131,10 +179,7 @@ def make_order_pdf(order_df, filename):
     story.append(Spacer(1, 15))
     story.append(Paragraph(f"合計 {len(order_df)} 商品", normal))
     doc.build(story)
-
     return path
-
-# ---------------- UI ----------------
 
 now = datetime.now()
 today_full = FULL_DAYS[now.weekday()]
@@ -148,13 +193,26 @@ tab1, tab2 = st.tabs(["🧹 チェックリスト", "📦 在庫・発注"])
 # チェックリスト
 # =========================================================
 with tab1:
-    today_tasks = [task for task, days in SCHEDULE.items() if today_full in days]
+    st.subheader("今日・曜日別の実施予定")
 
-    st.subheader("今日の実施予定")
+    col_day = st.columns(7)
+    selected_day = st.session_state.get("selected_day", today_full)
+    for i, d in enumerate(FULL_DAYS):
+        label = DAYS[i]
+        if col_day[i].button(label, use_container_width=True):
+            selected_day = d
+            st.session_state.selected_day = d
 
-    if st.button("🔄 今日のチェックを全部リセット", use_container_width=True):
+    target_day = selected_day
+    st.caption(f"表示中の曜日：{target_day}")
+
+    today_tasks = [task for task, days in SCHEDULE.items() if target_day in days]
+
+    if st.button("🔄 この曜日のチェックを全部リセット", use_container_width=True):
         for task in today_tasks:
             st.session_state.clean_status[task] = False
+            for det in st.session_state.clean_details.get(task, {}):
+                st.session_state.clean_details[task][det] = False
         st.session_state.clean_reset_no += 1
         st.rerun()
 
@@ -168,7 +226,7 @@ with tab1:
         hide_index=True,
         use_container_width=True,
         disabled=["項目"],
-        key=f"clean_editor_{st.session_state.clean_reset_no}",
+        key=f"clean_editor_{st.session_state.clean_reset_no}_{target_day}",
         column_config={
             "項目": st.column_config.TextColumn("項目", width="large"),
             "完了": st.column_config.CheckboxColumn("☑ 完了", default=False),
@@ -182,14 +240,27 @@ with tab1:
     total = len(edited)
 
     a,b,c = st.columns(3)
-    a.metric("今日の予定", total)
+    a.metric("この曜日の予定", total)
     b.metric("完了", done)
     c.metric("残り", total-done)
 
     st.progress(done/total if total else 0)
 
-    if total and done == total:
-        st.success("🎉 今日の予定はすべて完了！")
+    st.divider()
+    st.subheader("🧩 詳細チェック")
+
+    for task in today_tasks:
+        with st.expander(f"{task} の詳細チェック", expanded=False):
+            details = DETAILS.get(task, [])
+            if not details:
+                st.caption("詳細項目は登録されていません。")
+            else:
+                cols = st.columns(len(details))
+                for i, det in enumerate(details):
+                    key = f"detail_{task}_{det}"
+                    current = st.session_state.clean_details[task].get(det, False)
+                    new_val = cols[i].checkbox(det, value=current, key=key)
+                    st.session_state.clean_details[task][det] = new_val
 
     st.divider()
     st.subheader("📅 週間予定表")
@@ -266,7 +337,9 @@ with tab2:
 
     if len(current_orders):
         order_display = current_orders[["商品名","理論在庫数","容量"]].copy()
-        order_display.insert(3, "発注数", 1)
+        order_display.insert(3, "発注単位", [
+            ORDER_UNIT.get(n, 1) for n in order_display["商品名"]
+        ])
         st.dataframe(order_display, hide_index=True, use_container_width=True)
 
         if st.button("🖨️ 発注リストをPDF記録", use_container_width=True):
