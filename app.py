@@ -447,24 +447,26 @@ with tab2:
         st.session_state.inventory_reset_no += 1
         st.rerun()
 
-# =========================================================
-# 📤 出庫履歴タブ
-# =========================================================
-with tab3:
-    st.subheader("📤 出庫履歴")
+# 📤 出庫履歴の記録（差分検出：安全版）
+for i, row in base.iterrows():
 
-    if st.session_state.out_history:
-        st.dataframe(
-            pd.DataFrame(st.session_state.out_history),
-            hide_index=True,
-            use_container_width=True
-        )
+    # 商品名で一致させる（行番号は使わない）
+    prev_match = prev_df[prev_df["商品名"] == row["商品名"]]
+
+    if len(prev_match) == 0:
+        old_out = 0
     else:
-        st.caption("まだ出庫履歴はありません。")
+        old_out = int(prev_match["出庫数"].iloc[0])
 
-st.divider()
-st.caption("※表を直接編集できます。スマホでは横スクロールできます。")
+    new_out = int(row["出庫数"])
 
-
+    if new_out > old_out:
+        diff = new_out - old_out
+        st.session_state.out_history.append({
+            "日時": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "商品名": row["商品名"],
+            "出庫数": diff,
+            "残在庫": row["仕入数"] - new_out
+        })
 
 
