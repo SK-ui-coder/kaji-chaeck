@@ -121,9 +121,16 @@ def inventory_view():
     df["理論在庫数"] = (df["仕入数"] - df["出庫数"]).clip(lower=0)
     return df[["商品名","仕入数","出庫数","理論在庫数","容量","発注"]]
 
-# -----------------------------
-# PDF作成（文字化け完全修正）
-# -----------------------------
+# 日本語フォント（文字化け防止）
+FONT_PATH = "fonts/NotoSansCJK-Regular.otf"
+pdfmetrics.registerFont(TTFont("Japanese", FONT_PATH))
+PDF_FONT = "Japanese"
+
+from datetime import datetime, timedelta
+
+def jp_now():
+    return datetime.utcnow() + timedelta(hours=9)
+
 def make_order_pdf(order_df, filename):
     tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".pdf")
     path = tmp.name
@@ -144,34 +151,10 @@ def make_order_pdf(order_df, filename):
     story = [
         Paragraph("発注リスト", title_style),
         Spacer(1, 8),
-        Paragraph(f"発注日：{datetime.now():%Y年%m月%d日 %H:%M}", normal),
+        Paragraph(f"発注日：{jp_now():%Y年%m月%d日 %H:%M}", normal),
         Spacer(1, 12),
     ]
 
-    data = [["商品名","現在庫","容量","発注単位"]]
-    for _, r in order_df.iterrows():
-        unit = ORDER_UNIT.get(r["商品名"], 1)
-        data.append([
-            str(r["商品名"]),
-            str(int(r["理論在庫数"])),
-            str(int(r["容量"])),
-            str(unit),
-        ])
-
-    table = Table(data, colWidths=[230,80,80,80], repeatRows=1)
-    table.setStyle(TableStyle([
-        ("FONTNAME",(0,0),(-1,-1),PDF_FONT),
-        ("FONTSIZE",(0,0),(-1,-1),10),
-        ("BACKGROUND",(0,0),(-1,0),colors.lightgrey),
-        ("GRID",(0,0),(-1,-1),0.5,colors.grey),
-    ]))
-
-    story.append(table)
-    story.append(Spacer(1, 15))
-    story.append(Paragraph(f"合計 {len(order_df)} 商品", normal))
-
-    doc.build(story)
-    return path
 
 # -----------------------------
 # チェックリスト画面
